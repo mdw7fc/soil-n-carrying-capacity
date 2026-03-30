@@ -6,8 +6,8 @@ Reproduces the core analysis from:
     Wallenstein, M. D. (2026). Soil feedback dynamics amplify the
     consequences of nitrogen supply disruptions. Nature Food.
 
-Simulates a permanent 20% reduction in global synthetic nitrogen supply
-under three allocation scenarios:
+Simulates a sustained 20% reduction in global synthetic nitrogen supply
+over a 10-year horizon under three allocation scenarios:
     1. Uniform: every region loses 20%
     2. Trade-dependency: reductions proportional to Gulf N import reliance
     3. Price-mediated: market clearing allocates shortfall by elasticity
@@ -50,7 +50,7 @@ TRADE_DEPENDENCY_REDUCTIONS = {
 
 def main():
     regions = get_default_regions()
-    t_max = 50
+    t_max = 10
     outdir = Path(__file__).parent / 'output'
     outdir.mkdir(exist_ok=True)
 
@@ -104,7 +104,7 @@ def main():
     print(f"{'':=<70}")
     print(f"{'Year':>5}  {'Uniform':>10}  {'Trade-dep':>10}  {'Price-med':>10}")
     print("-" * 40)
-    for yr in [0, 1, 5, 10, 20, 30, 50]:
+    for yr in [0, 1, 3, 5, 7, 10]:
         bp = baseline_global.loc[baseline_global['year'] == yr, 'pop_total_millions'].values[0]
         u = uniform_global.loc[uniform_global['year'] == yr, 'pop_total_millions'].values[0]
         t = trade_dep_global.loc[trade_dep_global['year'] == yr, 'pop_total_millions'].values[0]

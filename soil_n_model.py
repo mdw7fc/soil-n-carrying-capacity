@@ -4,7 +4,8 @@ Dynamic Soil Nitrogen Carrying Capacity Model
 
 A system dynamics model tracking soil organic matter pool depletion,
 nitrogen mineralization, crop yield response, and carrying capacity
-under a permanent reduction in synthetic nitrogen supply.
+under a sustained reduction in synthetic nitrogen supply over a
+10-year analytical horizon.
 
 Framework: Three-pool SOM model (active, slow, passive) informed by
 Century/RothC logic, with coupled feedback loops for residue return
@@ -196,7 +197,7 @@ class SoilNCarryingCapacityModel:
         crop_params: CropParams = None,
         feedback_params: FeedbackParams = None,
         dt: float = 1.0,
-        t_max: float = 50.0,
+        t_max: float = 10.0,
     ):
         self.region = region
         self.reduction_fraction = reduction_fraction
@@ -408,7 +409,7 @@ def compute_price_mediated_reductions(
 # SCENARIO RUNNERS
 # ============================================================
 
-def run_scenario(regions, reduction_frac, t_max=50):
+def run_scenario(regions, reduction_frac, t_max=10):
     """Run all regions with a uniform permanent N reduction."""
     results = {}
     for rn, region in regions.items():
@@ -421,7 +422,7 @@ def run_scenario(regions, reduction_frac, t_max=50):
     return results
 
 
-def run_price_mediated(regions, reductions, t_max=50):
+def run_price_mediated(regions, reductions, t_max=10):
     """Run each region with its price-mediated reduction fraction."""
     results = {}
     for rn, region in regions.items():
