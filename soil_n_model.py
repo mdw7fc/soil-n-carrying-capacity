@@ -9,7 +9,8 @@ under a sustained reduction in synthetic nitrogen supply over a
 
 Framework: Three-pool SOM model (active, slow, passive) informed by
 Century/RothC logic, with coupled feedback loops for residue return
-and soil physical degradation.
+(including root C inputs), soil physical degradation, nitrogen
+immobilization from residue incorporation, and C-N coupling.
 
 Reference:
     Wallenstein, M. D. (2026). Soil feedback dynamics amplify the
@@ -36,10 +37,10 @@ class SOMPoolParams:
     f_slow: float = 0.38        # 25-50% of total SOM
     f_passive: float = 0.58     # 45-73% of total SOM
 
-    # Decay constants (yr^-1) -- reciprocal of turnover time
+    # Decay constants (yr^-1) -- calibrated for SOC equilibrium
     k_active: float = 0.33      # ~3 yr turnover
-    k_slow: float = 0.03        # ~33 yr turnover (half-life ~23 yr)
-    k_passive: float = 0.001    # ~1000 yr turnover
+    k_slow: float = 0.03705     # ~27 yr turnover
+    k_passive: float = 0.000728 # ~1,373 yr turnover
 
     # C:N ratios by pool
     cn_active: float = 8.0
@@ -54,9 +55,9 @@ class SOMPoolParams:
 @dataclass
 class CropParams:
     """Crop yield and nitrogen response parameters."""
-    yield_max: float = 5.0          # t/ha grain, global average mix
-    mitscherlich_c: float = 0.015   # Yield-N response curvature
-    yield_min: float = 0.8          # t/ha subsistence floor
+    yield_max: float = 5.0          # t/ha grain, default (overridden per region)
+    mitscherlich_c: float = 0.015   # Yield-N response curvature (overridden per region)
+    yield_min: float = 0.0          # Physiological minimum (overridden per region)
     residue_grain_ratio: float = 1.0
     residue_c_fraction: float = 0.42
     residue_cn: float = 60.0        # High C:N for cereal straw
@@ -72,7 +73,7 @@ class FeedbackParams:
     physical_feedback: bool = True
     physical_strength: float = 1.0
     cn_coupling_feedback: bool = True
-    cre_base: float = 0.11         # Carbon retention efficiency of residue
+    cre_base: float = 0.11         # Carbon retention efficiency (default, overridden per region)
     cre_to_active: float = 0.60    # Fraction of CRE going to active pool
     cre_to_slow: float = 0.40      # Fraction of CRE going to slow pool
 
@@ -92,6 +93,21 @@ class RegionParams:
     baseline_water_deficit: float = 0.0
     residue_retention: float = 0.85
 
+    # Region-specific crop response (override CropParams defaults)
+    yield_max_regional: float = 0.0      # 0 = use CropParams default
+    mitscherlich_c_regional: float = 0.0 # 0 = use CropParams default
+    yield_min_regional: float = 0.0      # 0 = use CropParams default
+
+    # Root:shoot C ratio for belowground C inputs to SOM.
+    # Roots are not subject to residue_retention (they stay in soil).
+    # Literature: Bolinder et al. 2007: 0.5-1.0 for cereals
+    root_shoot_c_ratio: float = 0.80
+
+    # Region-specific carbon retention efficiency. Calibrated so that
+    # initial SOC is approximately at equilibrium under current management.
+    # If 0, uses FeedbackParams.cre_base.
+    cre_regional: float = 0.0
+
 
 # ============================================================
 # DEFAULT REGIONS
@@ -101,6 +117,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
     """Return eight regions covering global cropland.
 
     Calibrated against FAO FAOSTAT 2023, ISRIC SoilGrids, and IFA data.
+    SOC values are cropland-specific (not landscape averages).
+    Each region's CRE and yield_max are calibrated so that initial SOC
+    is approximately at equilibrium under current management.
+
     Total cropland: ~1,230 Mha; Total synthetic N: ~99 Tg/yr.
     """
     return {
@@ -111,6 +131,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=900.0, texture_class=1,
             water_stress_coeff=0.003, baseline_water_deficit=0.0,
             residue_retention=0.90,
+            yield_max_regional=7.289,
+            yield_min_regional=1.1,     # Morrow Plots/Sanborn Field unfertilized
+            root_shoot_c_ratio=0.80,    # Bolinder et al. 2007; temperate cereals
+            cre_regional=0.280,
         ),
         'europe': RegionParams(
             name='Europe',
@@ -119,6 +143,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=900.0, texture_class=1,
             water_stress_coeff=0.003, baseline_water_deficit=0.0,
             residue_retention=0.90,
+            yield_max_regional=6.642,
+            yield_min_regional=1.0,     # Rothamsted Broadbalk unfertilized
+            root_shoot_c_ratio=0.80,
+            cre_regional=0.259,
         ),
         'east_asia': RegionParams(
             name='East Asia',
@@ -127,6 +155,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=1875.0, texture_class=1,
             water_stress_coeff=0.004, baseline_water_deficit=5.0,
             residue_retention=0.75,
+            yield_max_regional=6.559,
+            yield_min_regional=0.9,     # China 1949 avg; depleted dryland blended
+            root_shoot_c_ratio=0.60,    # Lower for rice-dominated systems
+            cre_regional=0.226,
         ),
         'south_asia': RegionParams(
             name='South Asia',
@@ -135,6 +167,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=1350.0, texture_class=1,
             water_stress_coeff=0.005, baseline_water_deficit=10.0,
             residue_retention=0.50,
+            yield_max_regional=4.686,
+            yield_min_regional=0.5,     # ICRISAT Vertisol trials
+            root_shoot_c_ratio=0.70,
+            cre_regional=0.341,
         ),
         'southeast_asia': RegionParams(
             name='Southeast Asia',
@@ -143,6 +179,10 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=750.0, texture_class=1,
             water_stress_coeff=0.004, baseline_water_deficit=5.0,
             residue_retention=0.70,
+            yield_max_regional=6.091,
+            yield_min_regional=1.2,     # Wetland rice BNF advantage
+            root_shoot_c_ratio=0.60,
+            cre_regional=0.307,
         ),
         'latin_america': RegionParams(
             name='Latin America',
@@ -151,22 +191,37 @@ def get_default_regions() -> Dict[str, RegionParams]:
             pop_supported=900.0, texture_class=1,
             water_stress_coeff=0.003, baseline_water_deficit=0.0,
             residue_retention=0.80,
+            yield_max_regional=6.841,
+            yield_min_regional=0.9,     # Pampas/Cerrado blended
+            root_shoot_c_ratio=0.90,    # Deep-rooted tropical systems
+            cre_regional=0.308,
         ),
         'sub_saharan_africa': RegionParams(
             name='Sub-Saharan Africa',
-            soc_initial=35.0, cn_bulk=11.0,
-            cropland_mha=230.0, synth_n_current=7.0,
+            soc_initial=9.0,            # Cropland-specific on degraded Oxisols/Ultisols
+            cn_bulk=11.0,               # (AfSIS landscape avg ~35 includes forest/woodland;
+            cropland_mha=230.0,         #  cultivated soils 5-15 t/ha: Batjes 2001, Vågen 2005)
+            synth_n_current=7.0,
             pop_supported=600.0, texture_class=0,
             water_stress_coeff=0.005, baseline_water_deficit=15.0,
             residue_retention=0.55,
+            yield_max_regional=6.83,
+            yield_min_regional=0.4,     # TSBF network controls on Oxisol/Ultisol
+            root_shoot_c_ratio=1.0,
+            cre_regional=0.20,
         ),
         'fsu_central_asia': RegionParams(
             name='Former Soviet Union & Central Asia',
-            soc_initial=50.0, cn_bulk=10.0,
+            soc_initial=35.0,           # Cultivated chernozems (~30% below native ~50+)
+            cn_bulk=10.0,               # (Mikhailova et al. 2000; Torn et al. 2002)
             cropland_mha=130.0, synth_n_current=38.0,
             pop_supported=375.0, texture_class=1,
             water_stress_coeff=0.004, baseline_water_deficit=10.0,
             residue_retention=0.85,
+            yield_max_regional=5.36,
+            yield_min_regional=0.9,     # Pryanishnikov Institute trials
+            root_shoot_c_ratio=1.0,     # Steppe-origin soils, deep roots
+            cre_regional=0.35,
         ),
     }
 
@@ -186,7 +241,8 @@ class SoilNCarryingCapacityModel:
     Key feedbacks:
         1. Residue return: lower yield -> less residue -> SOM loss -> less N
         2. Physical degradation: SOM loss -> water holding capacity loss -> yield penalty
-        3. C-N coupling: severe SOC depletion reduces mineralization efficiency
+        3. N immobilization: residue C entering SOM pools draws mineral N
+        4. C-N coupling: severe SOC depletion reduces mineralization efficiency
     """
 
     def __init__(
@@ -230,10 +286,15 @@ class SoilNCarryingCapacityModel:
 
     def _yield_from_n(self, n_available, water_stress_factor=1.0):
         """Crop yield from Mitscherlich response to available N."""
+        y_max = self.region.yield_max_regional if self.region.yield_max_regional > 0 else self.crop.yield_max
+        mit_c = self.region.mitscherlich_c_regional if self.region.mitscherlich_c_regional > 0 else self.crop.mitscherlich_c
+
         n_eff = max(0.0, n_available)
-        y = self.crop.yield_max * (1.0 - np.exp(-self.crop.mitscherlich_c * n_eff))
+        y = y_max * (1.0 - np.exp(-mit_c * n_eff))
         y *= water_stress_factor
-        return max(self.crop.yield_min, y)
+
+        y_floor = self.region.yield_min_regional if self.region.yield_min_regional > 0 else self.crop.yield_min
+        return max(y_floor, y)
 
     def _water_stress(self, soc_current):
         """Water stress factor (0-1) from SOC-driven water holding capacity loss."""
@@ -248,10 +309,35 @@ class SoilNCarryingCapacityModel:
         return max(0.3, min(1.0, stress))
 
     def _residue_c_input(self, yield_actual):
-        """Carbon input from crop residue (t C/ha/yr)."""
-        residue_mass = yield_actual * self.crop.residue_grain_ratio
-        residue_mass *= self.region.residue_retention
-        return residue_mass * self.crop.residue_c_fraction
+        """Total carbon input from aboveground residue + root C (t C/ha/yr).
+
+        Aboveground residue is subject to residue_retention.
+        Root C stays in the soil regardless of retention.
+        """
+        above_ground = yield_actual * self.crop.residue_grain_ratio
+        above_ground *= self.region.residue_retention
+
+        root_c = yield_actual * self.crop.residue_grain_ratio * self.region.root_shoot_c_ratio
+
+        return (above_ground + root_c) * self.crop.residue_c_fraction
+
+    def _n_immobilization(self, residue_c):
+        """Net N immobilized when residue C enters SOM pools (kg N/ha/yr).
+
+        When high C:N residue (~60) is incorporated into lower C:N SOM pools
+        (8-12), the stoichiometric mismatch draws mineral N from the soil
+        solution, reducing plant-available N.
+        """
+        cre = self.region.cre_regional if self.region.cre_regional > 0 else self.fb.cre_base
+
+        c_to_active = residue_c * cre * self.fb.cre_to_active
+        c_to_slow = residue_c * cre * self.fb.cre_to_slow
+        n_demand = (c_to_active / self.som.cn_active +
+                    c_to_slow / self.som.cn_slow) * 1000  # kg N/ha
+
+        n_supply = residue_c / self.crop.residue_cn * 1000  # kg N/ha
+
+        return max(0.0, n_demand - n_supply)
 
     def _cn_coupling_factor(self, soc_current):
         """Modifier to N mineralization efficiency under severe SOC depletion."""
@@ -272,7 +358,8 @@ class SoilNCarryingCapacityModel:
 
         results = {col: np.zeros(n_steps) for col in [
             'year', 'C_active', 'C_slow', 'C_passive', 'SOC_total',
-            'N_mineralized', 'N_synthetic', 'N_available',
+            'N_mineralized', 'N_immobilized', 'N_net_mineralized',
+            'N_synthetic', 'N_available',
             'yield_tha', 'yield_fraction', 'water_stress',
             'carrying_capacity_fraction',
         ]}
@@ -281,15 +368,21 @@ class SoilNCarryingCapacityModel:
         C_a, C_s, C_p = self.C_active, self.C_slow, self.C_passive
         baseline_bnf = 5.0  # kg N/ha/yr free-living fixation
 
-        # Reference yield at full N
+        # Reference yield at full N (with iterative immobilization)
         soc_0 = C_a + C_s + C_p
         n_min_0 = (
             self._n_mineralization(C_a, self.som.cn_active, self.som.k_active)
             + self._n_mineralization(C_s, self.som.cn_slow, self.som.k_slow)
             + self._n_mineralization(C_p, self.som.cn_passive, self.som.k_passive)
         )
-        n_avail_0 = (n_min_0 + self.region.synth_n_current + baseline_bnf) * self.crop.n_uptake_efficiency
-        yield_0 = self._yield_from_n(n_avail_0)
+        ws_0 = self._water_stress(soc_0)
+        n_avail_0 = n_min_0 + self.region.synth_n_current + baseline_bnf
+        for _ in range(3):
+            yield_0 = self._yield_from_n(n_avail_0 * self.crop.n_uptake_efficiency, ws_0)
+            res_c_0 = self._residue_c_input(yield_0)
+            n_immob_0 = self._n_immobilization(res_c_0)
+            n_avail_0 = (n_min_0 - n_immob_0) + self.region.synth_n_current + baseline_bnf
+        yield_0 = self._yield_from_n(n_avail_0 * self.crop.n_uptake_efficiency, ws_0)
 
         for i in range(n_steps):
             t = times[i]
@@ -303,9 +396,20 @@ class SoilNCarryingCapacityModel:
             ) * cn_factor
 
             n_synth = self._synthetic_n(t)
-            n_available = (n_mineralized + n_synth + baseline_bnf) * self.crop.n_uptake_efficiency
-
             ws = self._water_stress(soc)
+
+            # Iteratively solve yield-residue-immobilization feedback
+            n_immob = 0.0
+            for _ in range(3):
+                n_net = n_mineralized - n_immob
+                n_available = (n_net + n_synth + baseline_bnf) * self.crop.n_uptake_efficiency
+                y = self._yield_from_n(n_available, ws)
+                res_c = self._residue_c_input(y)
+                n_immob = self._n_immobilization(res_c)
+
+            # Final values with converged immobilization
+            n_net = n_mineralized - n_immob
+            n_available = (n_net + n_synth + baseline_bnf) * self.crop.n_uptake_efficiency
             y = self._yield_from_n(n_available, ws)
             res_c = self._residue_c_input(y)
             cc_frac = y / yield_0 if yield_0 > 0 else 0
@@ -315,6 +419,8 @@ class SoilNCarryingCapacityModel:
             results['C_passive'][i] = C_p
             results['SOC_total'][i] = soc
             results['N_mineralized'][i] = n_mineralized
+            results['N_immobilized'][i] = n_immob
+            results['N_net_mineralized'][i] = n_net
             results['N_synthetic'][i] = n_synth
             results['N_available'][i] = n_available
             results['yield_tha'][i] = y
@@ -331,13 +437,15 @@ class SoilNCarryingCapacityModel:
                 h_a_to_s = d_active * self.som.h_active_to_slow
                 h_s_to_p = d_slow * self.som.h_slow_to_passive
 
+                cre = self.region.cre_regional if self.region.cre_regional > 0 else self.fb.cre_base
+
                 if self.fb.residue_feedback:
-                    c_in_active = res_c * self.fb.cre_base * self.fb.cre_to_active * self.dt
-                    c_in_slow = res_c * self.fb.cre_base * self.fb.cre_to_slow * self.dt
+                    c_in_active = res_c * cre * self.fb.cre_to_active * self.dt
+                    c_in_slow = res_c * cre * self.fb.cre_to_slow * self.dt
                 else:
                     fixed_res = self._residue_c_input(yield_0)
-                    c_in_active = fixed_res * self.fb.cre_base * self.fb.cre_to_active * self.dt
-                    c_in_slow = fixed_res * self.fb.cre_base * self.fb.cre_to_slow * self.dt
+                    c_in_active = fixed_res * cre * self.fb.cre_to_active * self.dt
+                    c_in_slow = fixed_res * cre * self.fb.cre_to_slow * self.dt
 
                 C_a = max(0.0, C_a - d_active + c_in_active)
                 C_s = max(0.0, C_s - d_slow + h_a_to_s + c_in_slow)
@@ -380,7 +488,6 @@ def compute_price_mediated_reductions(
         reductions: dict of {region_name: reduction_fraction}
         price_increase: fractional equilibrium price increase
     """
-    # Baseline N consumption per region (Tg N/yr)
     region_n = {
         rn: r.cropland_mha * r.synth_n_current / 1000.0
         for rn, r in regions.items()
@@ -388,7 +495,6 @@ def compute_price_mediated_reductions(
     total_n = sum(region_n.values())
     target_reduction_tg = global_supply_cut * total_n
 
-    # Market clearing: P = target / sum(Q_i * |e_i| * (1 - s_i))
     denominator = sum(
         region_n[rn] * abs(PRICE_PARAMS[rn]['elasticity']) * (1 - PRICE_PARAMS[rn]['subsidy_buffer'])
         for rn in regions

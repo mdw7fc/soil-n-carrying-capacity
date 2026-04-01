@@ -88,6 +88,14 @@ def main():
     print("SOIL FEEDBACK AMPLIFICATION OF NITROGEN SUPPLY DISRUPTIONS")
     print("=" * 70)
 
+    # Baseline stability check
+    print("\nBaseline SOC stability (10 yr):")
+    for rn, region in regions.items():
+        soc0 = baseline[rn]['SOC_total'].iloc[0]
+        soc10 = baseline[rn]['SOC_total'].iloc[-1]
+        drift = (soc10 - soc0) / soc0 * 100
+        print(f"  {region.name:<35s}  SOC: {soc0:.1f} -> {soc10:.1f} t C/ha  drift={drift:+.2f}%")
+
     # Price-mediated allocation summary
     print(f"\nPrice-mediated allocation (equilibrium price increase: {price_increase:.0%})")
     print(f"{'Region':<32s}  {'Elasticity':>10s}  {'Subsidy':>8s}  {'N cut':>7s}")
@@ -127,7 +135,7 @@ def main():
         static_loss = (1 - s0 / bp0) * 100
         dynamic_loss = (1 - s10 / bp10) * 100
         amp = dynamic_loss / static_loss if static_loss > 0 else float('nan')
-        print(f"  {label:<20s}  static={static_loss:.1f}%  dynamic={dynamic_loss:.1f}%  amp={amp:.1f}x")
+        print(f"  {label:<20s}  static={static_loss:.1f}%  dynamic={dynamic_loss:.1f}%  amp={amp:.2f}x")
 
     # Regional breakdown (price-mediated, year 10)
     print(f"\n{'':=<70}")
